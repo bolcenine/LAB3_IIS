@@ -1,0 +1,72 @@
+import numpy as np
+import random
+import ray
+
+ray.init()
+
+# Клас для агента
+@ray.remote
+class Agent:
+    def __init__(self, strategy):
+        self.strategy = strategy
+    
+    def select_action(self, q_values):
+        return self.strategy.select_action(q_values)
+
+# Базовий клас для стратегій
+class BaseStrategy:
+    def select_action(self, q_values):
+        pass
+
+# Епсилон-жадібна стратегія
+class EpsilonGreedyStrategy(BaseStrategy):
+    def __init__(self, epsilon):
+        self.epsilon = epsilon
+    
+    def select_action(self, q_values):
+        if random.random() < self.epsilon:
+            return random.randint(0, len(q_values) - 1)
+        else:
+            return np.argmax(q_values)
+
+# Softmax стратегія
+class SoftmaxStrategy(BaseStrategy):
+    def __init__(self, temperature):
+        self.temperature = temperature
+    
+    def select_action(self, q_values):
+        probabilities = np.exp(q_values / self.temperature) / np.sum(np.exp(q_values / self.temperature))
+        action = np.random.choice(len(q_values), p=probabilities)
+        return action
+
+# UCB стратегія
+class UCBSrategy(BaseStrategy):
+    def __init__(self, c):
+        self.c = c
+        self.counts = np.zeros(10)  # Здесь 10 - кількість можливих дій
+        self.values = np.zeros(10)  # Здесь 10 - кількість можливих дій
+    
+    def select_action(self, q_values):
+        total_counts = np.sum(self.counts)
+        ucb_values = q_values + self.c * np.sqrt(np.log(total_counts + 1) / (self.counts + 1e-5))
+        action = np.argmax(ucb_values)
+        return action
+
+# Приклад використання агента з вибраною стратегією
+def main():
+    agent_epsilon_greedy = Agent.remote(EpsilonGreedyStrategy(0.1))
+    agent_softmax = Agent.remote(SoftmaxStrategy(0.5))
+    agent_ucb = Agent.remote(UCBSrategy(2.0))
+    
+    q_values = np.array([0.2, 0.5, 0.8, 0.3, 0.6, 0.9, 0.1, 0.7, 0.4, 0.2])  # Приклад Q-значень
+    
+    action_epsilon_greedy = ray.get(agent_epsilon_greedy.select_action.remote(q_values))
+    action_softmax = ray.get(agent_softmax.select_action.remote(q_values))
+    action_ucb = ray.get(agent_ucb.select_action.remote(q_values))
+    
+    print("Epsilon-Greedy Action:", action_epsilon_greedy)
+    print("Softmax Action:", action_softmax)
+    print("UCB Action:", action_ucb)
+
+if __name__ == "__main__":
+    main()
